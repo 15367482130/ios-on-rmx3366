@@ -1,4 +1,4 @@
-# kona-ios — 在 realme RMX3366（骁龙 870 / kona）上跑 iOS 16.5 用户态
+# ios-on-rmx3366 — 在 realme RMX3366（骁龙 870 / kona）上跑 iOS 16.5 用户态
 
 把 **iOS 16.5 的 Darwin 用户态（XNU 8796.121.2 / Darwin 22.5.0）** 移植到一台
 **Android 手机（realme 大师探索版 RMX3366，Snapdragon 870 / kona / SM8250-AC）** 上的
@@ -127,7 +127,7 @@
 ## 仓库结构
 
 ```
-kona-ios/
+ios-on-rmx3366/
 ├── README.md                     本文
 ├── docs/
 │   ├── FEATURES.md               功能矩阵（每条都带证据与日期）
