@@ -165,6 +165,8 @@ def main():
     ap.add_argument("--name", default="iOS 体验版 exp-v1 - 中文界面 / 无定时 / 无日志")
     ap.add_argument("--notes", default=None, help="markdown file for the release body")
     ap.add_argument("--private", action="store_true", help="create the repo as private")
+    ap.add_argument("--prerelease", action="store_true",
+                    help="mark as pre-release (hidden from the repo home sidebar's release card)")
     ap.add_argument("--token", default=None)
     ap.add_argument("--dry-run", action="store_true", help="print the plan, touch nothing")
     ap.add_argument("--skip-upload", action="store_true", help="create repo + release only")
@@ -227,14 +229,26 @@ def main():
     status, rel = api("GET", "/repos/%s/%s/releases/tags/%s" % (owner, args.repo, args.tag), token)
     if status == 200:
         log("release %s already exists: %s" % (args.tag, rel.get("html_url")))
+        # Re-runs should self-heal the "why is my release missing from the
+        # sidebar" case instead of leaving it as a prerelease forever.
+        if rel.get("prerelease") and not args.prerelease:
+            s2, r2 = api("PATCH", "/repos/%s/%s/releases/%d" % (owner, args.repo, rel["id"]),
+                         token, {"prerelease": False})
+            if s2 == 200:
+                rel = r2
+                log("  flipped prerelease -> latest (so the repo sidebar shows the card)")
     else:
         log("creating release %s ..." % args.tag)
+        # NOTE: prerelease must be False for the release card to appear in the
+        # repo home sidebar. A prerelease only shows "1 tag" + "Create a new
+        # release" there, which reads as "the release is missing" even though
+        # releases/tag/<tag> works fine. Use --prerelease to opt in.
         status, rel = api("POST", "/repos/%s/%s/releases" % (owner, args.repo), token, {
             "tag_name": args.tag,
             "name": args.name,
             "body": body or "See README and docs/ for the full notes.",
             "draft": False,
-            "prerelease": True,
+            "prerelease": bool(args.prerelease),
         })
         if status not in (201, 200):
             raise SystemExit("create release failed (HTTP %d): %s" % (status, rel))

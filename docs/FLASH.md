@@ -144,6 +144,27 @@ PUT /repos/{owner}/{repo}/contents/.probe   body={"message":"probe","content":""
 推完之后务必清掉 token：`git remote -v` 确认 URL 里没有凭据（本项目始终用
 `http.extraheader` 传，不写进 `.git/config`），再去 GitHub 把 token revoke。
 
+### 3.3 "release 建好了，但仓库首页右边看不到"
+
+第一次发版就撞上了。仓库首页右侧的 `Releases` 卡片**只挂最新正式发布**：
+
+| release 状态 | 首页右侧 |
+|---|---|
+| 正式（Latest） | 卡片：版本号 + 说明 + `Latest` 徽章 + assets 数 |
+| 预发布（Pre-release） | 只有 `1 tag` 和一行 `Create a new release` |
+| 草稿（Draft） | 完全不显示（只有登录的你有权限看） |
+
+`releases/tag/<tag>` 页面本身一切正常、资产都在，所以很容易误判成"发布丢了"。
+`prerelease: true` 就是元凶：
+
+```bash
+# 改回正式
+PATCH /repos/{owner}/{repo}/releases/{id}   {"prerelease": false}
+```
+
+`tools/publish_release.py` 现在默认发正式版，要用预发布得显式 `--prerelease`；
+重跑时若发现已有 release 是预发布状态，会自动 PATCH 成 Latest。
+
 ---
 
 ## 4. USB 层的坑（每条都真的发生过）
