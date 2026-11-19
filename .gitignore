@@ -1,0 +1,35 @@
+# --- binaries and images: never in git ---
+*.img
+*.apfs
+*.bin
+*.dmg
+*.ipa
+*.tar
+*.mach
+*.o
+*.obj
+*.efi
+!tools/app/**/*.plist
+
+# --- packaging: the flash bundle carries a 2.7 GB image ---
+packaging/**/runtime/
+packaging/**/site-packages/
+packaging/**/libusb-1.0.dll
+packaging/**/*.apfs
+packaging/**/*.bin
+packaging/**/*.img
+
+# --- local scratch ---
+_log*.txt
+_diag.log
+_base*.txt
+_hang_now.txt
+*.log
+__pycache__/
+.venv/
+*.pyc
+
+# --- OS noise ---
+Thumbs.db
+.DS_Store
+desktop.ini
