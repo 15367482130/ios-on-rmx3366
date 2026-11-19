@@ -18,6 +18,20 @@
     "system": "system.apfs",
     "payload": "itn-exp.bin"
   },
+  "sizes": {
+    "loader-logfix.img": 1822720,
+    "system.apfs": 2734755840,
+    "itn-exp.bin": 44163944
+  },
+  "release_assets": {
+    "note": "GitHub release assets cap at 2 GiB, so the 2.7 GB system image is uploaded split. Both layouts work; the flasher streams straight through the parts and never needs a merge step.",
+    "system.apfs": [
+      "system.apfs.001",
+      "system.apfs.002"
+    ],
+    "part_size_bytes": 2002780160,
+    "checksums": "SHA256SUMS.txt"
+  },
   "cmdline_features": [
     "wifi=1", "wifi_bdf_native=1", "bt=1", "bt_ldo=ldoa16",
     "sound=4", "sound_amps=1", "adsp=1", "torch=3",

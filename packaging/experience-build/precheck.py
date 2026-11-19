@@ -11,6 +11,7 @@ driver -- pressing Enter skips it and the flash still runs.
 """
 import os
 import sys
+import glob
 import json
 import importlib.metadata as md
 
@@ -19,6 +20,27 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 MIN_PY = (3, 8)
 MIN_PYUSB = "1.2.0"
 MIN_LIBUSB = (1, 0, 20)
+
+
+def find_parts(path):
+    """Sorted .001/.002/... chain that replaces path (release assets cap at 2 GiB)."""
+    return sorted(glob.glob(glob.escape(path) + ".[0-9][0-9][0-9]"))
+
+
+def image_report(path, expected):
+    """(ok, message) for one image, whether it is whole or split."""
+    if os.path.exists(path):
+        size, how = os.path.getsize(path), "whole file"
+    else:
+        parts = find_parts(path)
+        if not parts:
+            return False, "%s missing (and no %s.001)" % (os.path.basename(path), os.path.basename(path))
+        size = sum(os.path.getsize(p) for p in parts)
+        how = "%d parts: %s" % (len(parts), ", ".join(os.path.basename(p) for p in parts))
+    msg = "%s (%d MB, %s)" % (os.path.basename(path), size // 1048576, how)
+    if expected and size != expected:
+        return False, msg + " -- expected %d bytes, got %d (download incomplete?)" % (expected, size)
+    return True, msg
 
 
 def vtuple(s):
@@ -127,13 +149,17 @@ def main():
         all_ok &= fail("fb_libusb.py missing")
 
     images = cfg.get("images", {})
+    sizes = cfg.get("sizes", {})
     for key in ("loader", "system", "payload"):
         name = images.get(key)
-        p = os.path.join(HERE, name) if name else None
-        if p and os.path.exists(p):
-            ok("%s (%d MB)" % (name, os.path.getsize(p) // 1048576))
+        if not name:
+            all_ok &= fail("%s not listed in versions.json" % key)
+            continue
+        good, msg = image_report(os.path.join(HERE, name), sizes.get(name))
+        if good:
+            ok(msg)
         else:
-            all_ok &= fail("%s missing" % (name or key))
+            all_ok &= fail(msg)
 
     if all_ok:
         print("=== All checks passed. Safe to flash. ===")

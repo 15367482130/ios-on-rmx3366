@@ -67,6 +67,49 @@ python fb_libusb.py flash loader-logfix.img system.apfs itn-exp.bin
 | `fb_libusb.py run payload.bin` | 只换 payload 重跑（系统卷已在内存里时可用，但受限于"一个会话只能 run 一次"） |
 | `fb_libusb.py reboot` | `reboot-bootloader`，清掉 ABL 的"已 boot 过"状态 |
 
+### 3.1 分片镜像（GitHub release 用）
+
+GitHub 单个 release 资产上限 **2 GiB**，系统镜像是 2.55 GiB，所以发布时切成
+`system.apfs.001` + `system.apfs.002`。
+
+`fb_libusb.py` 接受**路径不存在但 `.001` 链存在**的情况：
+
+```powershell
+# 目录里只有 system.apfs.001 / .002，没有 system.apfs 也行
+python fb_libusb.py flash loader-logfix.img system.apfs itn-exp.bin
+```
+
+内部机制：`resolve_image()` 发现 `system.apfs` 不存在就收集连续的 `.001/.002/...`，
+包成 `ImageSource`；`download()` 只用到 `len(data)` 和 64 KiB 对齐切片，`ImageSource`
+就在对应分片里 seek + read，一次只占一个 64 KiB 缓冲。
+
+- **不需要合并**：不占额外 2.7 GB 磁盘，不产生第二份副本
+- **不缺片不报错**：链断（有 `.001` 没 `.002`，或跳到 `.003`）直接拒绝，且在校验阶段就失败
+- 单分片（只有 `.001`）也认；存在完整 `system.apfs` 时**优先用完整文件**，行为与老版本完全一致
+- 传完会 `close()`，分片随即可以移动/删除
+
+生成分片 + 校验清单：
+
+```powershell
+python tools/make_release.py --src <体验版目录> --out release --tag exp-v1
+# [1/3] zip 1357 files -> ios-on-rmx3366-exp-v1.zip (34.5 MB)
+# [2/3] split image: 2608.1 MB into 1900 MB parts
+# [3/3] sha256 of 3 assets -> SHA256SUMS.txt
+```
+
+脚本幂等：已有分片总字节数与源文件一致就复用，不重写。
+
+发布到 GitHub（建仓 + 建 release + 上传，可断点重跑）：
+
+```powershell
+python tools/publish_release.py --dir release --tag exp-v1 --notes docs/RELEASE_NOTES.md
+```
+
+**踩过的坑**：fine-grained PAT 调 `POST /user/repos` 会返回
+`403 Resource not accessible by personal access token` —— fine-grained token 建新仓库需要
+账号级 `Administration: write` + "All repositories"，多数人没开。要么先手工建空仓库
+（token 只需 `Contents: Read and write`），要么用 classic token 勾 `repo`。
+
 ---
 
 ## 4. USB 层的坑（每条都真的发生过）

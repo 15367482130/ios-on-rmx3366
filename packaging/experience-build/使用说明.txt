@@ -21,12 +21,31 @@
   libusb-1.0.dll    —— 内置 USB 库
   loader-logfix.img —— 引导程序（xnuloader）
   system.apfs       —— iOS 系统镜像 2.73GB（中文 + 完整字体 + modem 固件）
+                       从 GitHub Release 下载时它被切成 system.apfs.001 + .002，
+                       总字节数完全一样，刷机程序两种布局都认
   itn-exp.bin       —— 体验版内核 + ramdisk + 启动参数
   precheck.py       —— 刷机前自检（不通过就不碰手机）
   devcheck.py       —— 检查手机是否已进 fastboot / 驱动是否可用
   driver_winusb.ps1 —— 可选：尝试给手机装标准 WinUSB 驱动
   fb_libusb.py      —— 纯 Windows 刷机程序（不需要 fastboot.exe）
   versions.json     —— 版本清单
+
+【如果你是从 GitHub Release 下载的】
+  Release 里的系统镜像是两个分片（GitHub 单个文件上限 2GB）：
+      system.apfs.001   1900 MB
+      system.apfs.002   708  MB
+  把它们俩放进本文件夹（和「刷机-体验版.bat」同级）就能刷，
+  【不需要合并】—— 刷机程序直接跨分片流式读取，不多占 2.7GB 磁盘，
+  也不会多出一份镜像副本。
+
+  想在刷之前自己核对一遍（可选，但推荐）：
+      certutil -hashfile system.apfs.001 SHA256
+      certutil -hashfile system.apfs.002 SHA256
+      certutil -hashfile ios-on-rmx3366-exp-v1.zip SHA256
+  和 SHA256SUMS.txt 里对应行逐字比对，不一致就重新下载，别刷。
+
+  脚本在 [0/5] 阶段会自己核对分片总字节数（必须是 2734755840），
+  下载不全或分片缺失会当场停下，一个字节都不会发给手机。
 
 【怎么刷】
   1. 手机：长按电源关机 → 按住「音量下 + 电源」直到出现 fastboot 画面

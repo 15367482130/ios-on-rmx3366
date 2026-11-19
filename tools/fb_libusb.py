@@ -25,8 +25,14 @@ Usage:
   python fb_libusb.py devices
   python fb_libusb.py getvar product
   python fb_libusb.py flash <loader.img> <system.apfs> <payload.bin>
+
+Split images:
+  GitHub release assets cap at 2 GiB, so the 2.7 GB system image ships as
+  system.apfs.001 + system.apfs.002.  Passing `system.apfs` (which does not
+  exist) makes flash pick the .001 chain up automatically and stream straight
+  through the parts -- no merge step, no second copy on disk, no 2.7 GB buffer.
 """
-import sys, os, time, struct
+import sys, os, time, struct, glob
 
 import usb.core
 import usb.util
@@ -149,7 +155,7 @@ class Fastboot:
         return r
 
     def download(self, data, chunk_report=True):
-        total = len(data)
+        total = len(data)  # ImageSource and bytes both answer len() and slicing
         t0 = time.time()
         # Retry the whole download handshake a few times: if a previous run left
         # the device mid-download, a fresh download: command usually resets it.
@@ -194,6 +200,106 @@ class Fastboot:
                 "libusb port reset were all tried); a loader built with the abort_xfer fix, or a "
                 "cable replug, is what clears it.")
         raise RuntimeError(f"{last} -- {hint}") from last
+
+
+class ImageSource:
+    """One read-only byte string spread over several files.
+
+    download() only ever asks for len(data) and 64 KiB-aligned slices, so this
+    class answers exactly those two questions by seeking inside the right part
+    and keeping a single file handle open.  Memory stays at one 64 KiB chunk and
+    the 2.7 GB image never has to be concatenated on disk.
+    """
+
+    def __init__(self, paths):
+        self.paths = list(paths)
+        self.spans = []          # (start, end, path, size)
+        base = 0
+        for p in self.paths:
+            n = os.path.getsize(p)
+            if n <= 0:
+                raise RuntimeError(f"split part is empty: {p}")
+            self.spans.append((base, base + n, p, n))
+            base += n
+        self.total = base
+        self._fh = None
+        self._fh_path = None
+        self._fh_base = 0
+
+    def __len__(self):
+        return self.total
+
+    def close(self):
+        if self._fh is not None:
+            try:
+                self._fh.close()
+            except Exception:
+                pass
+            self._fh = None
+            self._fh_path = None
+
+    def _span_for(self, off):
+        for start, end, path, size in self.spans:
+            if start <= off < end:
+                return start, end, path, size
+        raise IndexError(f"offset {off} outside the {self.total}-byte chain")
+
+    def __getitem__(self, sl):
+        if not isinstance(sl, slice):
+            raise TypeError("ImageSource only supports slicing")
+        start, stop, _ = sl.indices(self.total)
+        out = bytearray()
+        pos = start
+        while pos < stop:
+            span_start, span_end, path, size = self._span_for(pos)
+            if path != self._fh_path:
+                self.close()
+                self._fh = open(path, "rb")
+                self._fh_path = path
+                self._fh_base = span_start
+                self._fh.seek(pos - span_start)
+            take = min(stop, span_end) - pos
+            buf = self._fh.read(take)
+            if not buf:
+                raise RuntimeError(f"short read at offset {pos} of {path} (truncated download?)")
+            out += buf
+            pos += len(buf)
+        return bytes(out)
+
+
+def find_parts(path):
+    """Return the sorted .001, .002, ... chain for path, or [] when there is none."""
+    return sorted(glob.glob(glob.escape(path) + ".[0-9][0-9][0-9]"))
+
+
+def resolve_image(path):
+    """Bytes if the file is there, an ImageSource if only the .001 chain is."""
+    if os.path.exists(path):
+        return path
+    parts = find_parts(path)
+    if not parts:
+        raise RuntimeError(
+            f"missing image: {os.path.basename(path)} (and no {os.path.basename(path)}.001)")
+    expect = 1
+    for p in parts:
+        num = int(p.rsplit(".", 1)[1])
+        if num != expect:
+            raise RuntimeError(
+                f"split chain broken: expected part {expect:03d}, found {os.path.basename(p)}")
+        expect += 1
+    return ImageSource(parts)
+
+
+def describe_image(src):
+    if isinstance(src, ImageSource):
+        return f"{len(src)} bytes in {len(src.paths)} parts ({os.path.basename(src.paths[0])} ...)"
+    return f"{os.path.getsize(src)} bytes"
+
+
+def open_image(src):
+    if isinstance(src, ImageSource):
+        return src
+    return open(src, "rb").read()
 
 
 def main():
@@ -258,6 +364,10 @@ def main():
         args = [a for a in args if a != "--force-boot"]
         loader, system, payload = args[1], args[2], args[3]
         t0 = time.time()
+        # Resolve the images BEFORE touching the phone: a missing file or a broken
+        # .001/.002 chain must not leave the loader half-booted with nothing staged.
+        sys_src = resolve_image(system)
+        pay_src = resolve_image(payload)
         # If the loader is already running (PID 4EE0), skip the boot stage,
         # UNLESS --force-boot is given (e.g. to load a rebuilt loader with a
         # higher PAYLOAD_MAX_SIZE). Reuse the already-open dev/fb from main().
@@ -288,10 +398,14 @@ def main():
         if not r.startswith("OKAY"):
             return 5
         # 4) download system.apfs + payload (into ramdisk window)
-        print(f"[4/5] download system.apfs ({os.path.getsize(system)} bytes)")
-        fb.download(open(system, "rb").read())
-        print(f"[4/5] download payload {os.path.basename(payload)} ({os.path.getsize(payload)} bytes)")
-        fb.download(open(payload, "rb").read())
+        print(f"[4/5] download system.apfs ({describe_image(sys_src)})")
+        fb.download(open_image(sys_src))
+        if isinstance(sys_src, ImageSource):
+            sys_src.close()          # release the handle so the parts can be moved/deleted
+        print(f"[4/5] download payload {os.path.basename(payload)} ({describe_image(pay_src)})")
+        fb.download(open_image(pay_src))
+        if isinstance(pay_src, ImageSource):
+            pay_src.close()
         # 5) oem run
         print("[5/5] oem run")
         r = fb.cmd("oem run", timeout=30000)

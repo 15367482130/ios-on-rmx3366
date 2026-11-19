@@ -106,22 +106,48 @@
 
 前提：一台手机（RMX3366，bootloader 已解锁）、一根数据线、一台 Windows。
 
-1. 手机关机 → 按住 **音量下 + 电源** 直到出现 `fastboot` 画面
-2. 双击 **`刷机-体验版.bat`**（UAC 选「是」）
-3. 等约 2 分钟，看到 `FLASH DONE`
-4. 手机 1–2 分钟后进入 iOS 桌面
+### 方式 A：下 Release，双击就刷（推荐）
 
-脚本会自己检查：内置 Python、pyusb、libusb DLL、三个镜像是否齐全。
+1. 到 [Releases](../../releases) 下载这 4 个文件到同一个文件夹：
+
+   | 文件 | 大小 | 是什么 |
+   |---|---|---|
+   | `ios-on-rmx3366-exp-v1.zip` | 34.5 MB | 脚本 + 内置 Python + pyusb + libusb + payload + loader |
+   | `system.apfs.001` | 1900 MB | 系统镜像前半 |
+   | `system.apfs.002` | 708 MB | 系统镜像后半 |
+   | `SHA256SUMS.txt` | 1 KB | 三个文件的 sha256 |
+
+2. 解压 zip → 得到一个 `ios-on-rmx3366-exp-v1` 文件夹
+3. 把 `system.apfs.001` / `system.apfs.002` **移动进这个文件夹**（和 `刷机-体验版.bat` 同级）
+4. 手机关机 → 按住 **音量下 + 电源** 直到出现 `fastboot` 画面
+5. 双击 **`刷机-体验版.bat`**（UAC 选「是」），等约 2–4 分钟看到 `FLASH DONE`
+6. 手机 1–2 分钟后进入 iOS 桌面
+
+> **为什么镜像有两个文件？** GitHub 单个 release 资产上限 2 GiB，系统镜像是 2.55 GiB。
+> **不用合并**：`fb_libusb.py` 直接跨 `.001`/`.002` 流式读取，既不多占 2.7 GB 磁盘，
+> 也不会产生第二份副本。真想合并也行：`copy /b system.apfs.001+system.apfs.002 system.apfs`，
+> 脚本两种布局都认。
+
+### 方式 B：自己构建镜像
+
+见 [`docs/BUILD.md`](docs/BUILD.md)：从 `mksys-cn.sh` 生成 apfs，到 `itn-cn4.bin` 打 cmdline。
+
+### 两种方式都一样的两件事
+
+脚本会自己检查：内置 Python、pyusb、libusb DLL、三个镜像是否齐全（**含分片总字节数**，
+下载不全直接停，不给手机发任何东西）。
+
 **USB 驱动只做提示**：如果 Windows 看得到手机但 libusb 打不开，
 脚本会问你要不要试装 WinUSB —— **直接按回车就跳过，继续往下走**。
 
 体验版内容：
 
-- 中文界面（完整 PingFang、全部 zh 本地化）
+- 中文界面（完整 PingFang 36 字面、全部 zh 本地化）
 - **没有任何定时器**：不会「到点自己黑屏停住」
 - **没有屏幕日志**（去掉了 `-v`，内核不再把文本控制台画到屏幕上）
 - 开机后不联网、不装演示 App
 
+发布说明见 [`docs/RELEASE_NOTES.md`](docs/RELEASE_NOTES.md)，
 细节见 [`packaging/experience-build/使用说明.txt`](packaging/experience-build/使用说明.txt)。
 
 ## 仓库结构
@@ -137,10 +163,13 @@ ios-on-rmx3366/
 │   ├── FLASH.md                  刷机链路与 USB 层的全部坑
 │   ├── DEVICE.md                 硬件常量：地址、GPIO、电源轨、传感器、设备树差异
 │   ├── ROADMAP.md                没做完的、试过什么、进度如何
+│   ├── RELEASE_NOTES.md          体验版 release 说明（用户下载时看到的那份）
 │   ├── HISTORY.md                按时间顺序的完整工作记录（78 节，最长的一份）
 │   └── CREDITS.md                上游项目与许可
 ├── tools/
 │   ├── fb_libusb.py              纯 Windows 的 libusb fastboot 客户端（核心工具）
+│   ├── make_release.py           打 release 包：zip + 分片 + SHA256SUMS
+│   ├── publish_release.py        建仓 / 建 release / 上传资产（GitHub API，纯 stdlib）
 │   ├── make_payload.py           kernel + ramdisk + cmdline → XNUP payload
 │   ├── dump_payload.py           查看 payload 的条目与 cmdline
 │   ├── bootargs_edit.py          cmdline 里按字节替换参数
@@ -171,6 +200,7 @@ ios-on-rmx3366/
 | 怎么从零编译出这套东西 | [`docs/BUILD.md`](docs/BUILD.md) |
 | 刷机为什么老失败 / USB 为什么卡死 | [`docs/FLASH.md`](docs/FLASH.md) |
 | 某个地址/GPIO/电源轨是多少 | [`docs/DEVICE.md`](docs/DEVICE.md) |
+| 我要下一个能刷的傻瓜包 | [Releases](../../releases) + [`docs/RELEASE_NOTES.md`](docs/RELEASE_NOTES.md) |
 | 还剩什么没做、试过哪些死路 | [`docs/ROADMAP.md`](docs/ROADMAP.md) |
 | 完整的踩坑流水账（78 节） | [`docs/HISTORY.md`](docs/HISTORY.md) |
 

@@ -86,8 +86,12 @@ echo [3/5] Waiting for the device to settle...
 timeout /t 3 >nul
 
 REM ---- step 4: flash ----
+REM system.apfs may be missing here: the GitHub release ships it as
+REM system.apfs.001/.002 (2 GiB asset limit).  fb_libusb streams the chain
+REM directly, so there is nothing to merge and no extra 2.7 GB of disk used.
 echo [4/5] Flashing now: loader + 2.7 GB system image + payload.
-echo       About 2 minutes. Do NOT unplug the cable.
+echo       Split parts (.001/.002) are streamed as one image - nothing to merge.
+echo       About 2-4 minutes. Do NOT unplug the cable.
 "%PY%" fb_libusb.py flash loader-logfix.img system.apfs itn-exp.bin
 if errorlevel 1 goto :flash_failed
 

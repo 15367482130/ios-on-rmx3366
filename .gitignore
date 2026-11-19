@@ -33,3 +33,8 @@ __pycache__/
 Thumbs.db
 .DS_Store
 desktop.ini
+
+# --- release staging: built by tools/make_release.py, uploaded, never committed ---
+/release/
+SHA256SUMS.txt
+.token.txt
