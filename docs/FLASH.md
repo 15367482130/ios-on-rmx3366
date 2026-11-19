@@ -110,6 +110,40 @@ python tools/publish_release.py --dir release --tag exp-v1 --notes docs/RELEASE_
 账号级 `Administration: write` + "All repositories"，多数人没开。要么先手工建空仓库
 （token 只需 `Contents: Read and write`），要么用 classic token 勾 `repo`。
 
+### 3.2 从国内网络推 GitHub：代理 / 认证 / 权限三连坑
+
+这台机器上三条依次撞过，每条都会让人以为"token 坏了"：
+
+| 现象 | 真正原因 | 解法 |
+|---|---|---|
+| `Recv failure: Connection was reset` | git **不读** Windows 的 IE 代理设置，直连 github.com 被重置。诡异的是 Python `urllib` 走 IE 代理能通，会误判成"网络没问题" | 显式给 git 指定代理：`git -c http.proxy=http://127.0.0.1:7890 push ...`（端口用本机 Clash/其它客户端的） |
+| `remote: invalid credentials` | git 的 smart HTTP 端点**只认 Basic**，不认 `Authorization: Bearer`（后者是 REST API 的用法） | `AUTH=$(printf 'x-access-token:%s' "$TOKEN" \| base64 -w0)`，再 `-c http.extraheader="Authorization: Basic $AUTH"` |
+| `Permission to <owner>/<repo>.git denied to <owner>` + `403` | token 有身份但没写权限。fine-grained 的 `Repository access` 停在 `Public repositories (read-only)` 时，下面 `Contents: Read and write` 存了也不生效 | 见下面的探测法 |
+
+**别被 `permissions` 字段骗了**：
+
+```
+GET /repos/{owner}/{repo}
+→ "permissions": {"admin": true, "maintain": true, "push": true, ...}
+```
+
+这是**账号本身**对该仓库的权限（仓库是你自己建的，当然全 true），**不代表 token 有写权限**。
+真正能验证 token 的是拿它做一次写操作：
+
+```python
+# 0 字节写探测，成功就立刻删掉
+PUT /repos/{owner}/{repo}/contents/.probe   body={"message":"probe","content":""}
+# 403 Resource not accessible by personal access token  -> token 没有 Contents: write
+# 201                                                   -> token 可写，git push 也能过
+```
+
+结论：**fine-grained token 对"刚刚新建的仓库"极容易踩这个坑**（新仓库不在它的授权列表里，
+而且 `Public repositories (read-only)` 这个默认选项会把所有权限锁成只读）。
+赶时间就直接用 **classic token 勾 `repo`**，账号级授权，没有"仓库列表"这一层。
+
+推完之后务必清掉 token：`git remote -v` 确认 URL 里没有凭据（本项目始终用
+`http.extraheader` 传，不写进 `.git/config`），再去 GitHub 把 token revoke。
+
 ---
 
 ## 4. USB 层的坑（每条都真的发生过）
